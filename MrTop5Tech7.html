@@ -130,6 +130,7 @@ h2 { font-size:20px; }
 #game,#portFrame { display:none; }
 #playerMessage {
   position:absolute;
+  z-index:2;
   inset:0;
   display:flex;
   align-items:center;
@@ -532,6 +533,23 @@ function cleanupPlayer() {
   // EmulatorJS runs in a fresh iframe for each launch. Removing a script tag
   // cannot remove top-level lexical declarations such as EJS_STORAGE.
   if (emulatorFrame) {
+    // Stop the emulator before removing its browsing context. Some browser
+    // audio pipelines can keep playing briefly if an iframe is only detached.
+    try {
+      const win = emulatorFrame.contentWindow;
+      const doc = emulatorFrame.contentDocument;
+      if (doc) {
+        doc.querySelectorAll("audio, video").forEach(media => {
+          try { media.pause(); media.removeAttribute("src"); media.load(); } catch (_) {}
+        });
+      }
+      if (win) {
+        try { if (win.EJS_emulator && typeof win.EJS_emulator.pause === "function") win.EJS_emulator.pause(); } catch (_) {}
+        try { if (win.EJS_emulator && typeof win.EJS_emulator.exit === "function") win.EJS_emulator.exit(); } catch (_) {}
+        try { win.stop(); } catch (_) {}
+      }
+      emulatorFrame.src = "about:blank";
+    } catch (_) {}
     emulatorFrame.onload = null;
     emulatorFrame.onerror = null;
     emulatorFrame.remove();
@@ -711,7 +729,7 @@ async function launchRom(item) {
     frame.allow = "autoplay; fullscreen; gamepad; clipboard-read; clipboard-write";
     frame.allowFullscreen = true;
     frame.referrerPolicy = "no-referrer";
-    frame.style.cssText = "position:absolute;inset:0;width:100%;height:100%;border:0;background:#000";
+    frame.style.cssText = "position:absolute;inset:0;display:block;width:100%;height:100%;min-width:100%;min-height:100%;border:0;background:#000;z-index:1";
     emulatorFrame = frame;
     $("game").replaceChildren(frame);
 
@@ -727,7 +745,13 @@ async function launchRom(item) {
     frame.srcdoc = `<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<style>html,body,#game{margin:0;width:100%;height:100%;overflow:hidden;background:#000}body{position:relative}</style>
+<style>
+html,body{margin:0;padding:0;width:100%;height:100%;min-width:100%;min-height:100%;overflow:hidden;background:#000}
+body{position:relative}
+#game{position:absolute;inset:0;width:100%;height:100%;min-width:100%;min-height:100%;overflow:hidden;background:#000}
+#game canvas,#game video,#game iframe{max-width:100%;max-height:100%}
+#game canvas{display:block}
+</style>
 </head><body><div id="game"></div><script>
 (() => {
   const cfg = __CONFIG__;
